@@ -14,9 +14,14 @@ delta=$(python -c "print(pow($delta2,0.5))")
 w0=$(python -c "print($k0*$drho*$g*$phi0*$phi0/$etaf)")
 t0=$(python -c "print($delta/$w0)")
 t0yr=$(python -c "print($delta/$w0/(60*60*24*365))")
-yres=1000
 ndelta=200
-outputfolder=output-sp93-ias-ny${yres}-rphi1${rphi1}
+
+yres=1000
+
+for yres in 200 500 1500;
+do
+
+outputfolder=output-sp93-ias-ny${yres}-rphi${rphi1}
 echo $outputfolder
 
 echo "# Part added through a script -- overwrites some previous settings:" > 2add.prm
@@ -99,4 +104,4 @@ gnuplot -persist <<-EOFMarker
 EOFMarker
 # rest of script, after gnuplot exits
 
-#done
+done
