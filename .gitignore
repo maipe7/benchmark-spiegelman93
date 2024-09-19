@@ -1,0 +1,7 @@
+*.out
+/output*
+/CMakeFiles
+CMakeCache.txt
+cmake*
+Makefile
+*.so

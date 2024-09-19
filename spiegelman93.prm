@@ -1,0 +1,151 @@
+set Dimension                              = 2
+set Adiabatic surface temperature          = 1000
+set End time                               = 1e6
+set Maximum time step                      = 1e3
+set Maximum first time step                = 1e1
+set Maximum relative increase in time step = 10
+set Output directory                       = output-sp93-ias-ny1000
+set Use years in output instead of seconds = true
+#set Resume computation = true
+
+set CFL number = 0.5
+set Nonlinear solver scheme                = iterated Advection and Stokes
+set Max nonlinear iterations               = 10
+set Nonlinear solver tolerance             = 1e-4
+
+set Use operator splitting                     = true
+subsection Solver parameters
+  subsection Operator splitting parameters
+    set Reaction time step                     = 1e1
+    set Reaction time steps per advection step = 10
+  end
+end
+
+subsection Geometry model
+  set Model name = box
+  subsection Box
+    set X extent = 50
+    set Y extent = 50000
+    set X repetitions = 1
+    set Y repetitions = 1000
+  end
+end
+
+subsection Gravity model
+  set Model name = vertical
+  subsection Vertical
+    set Magnitude = 10.0
+  end
+end
+
+subsection Boundary velocity model
+  set Tangential velocity boundary indicators = left, right, bottom
+end
+
+subsection Initial temperature model
+  set List of model names = function
+  subsection Function
+    set Function expression = 1
+  end
+end
+
+subsection Melt settings
+  set Include melt transport        = true
+  #set Heat advection by melt        = true
+  set Melt scaling factor threshold = 1e-3
+end
+
+subsection Compositional fields
+  set Number of fields = 2
+  set Names of fields = porosity, peridotite
+end
+
+subsection Initial composition model
+  set Model name = function
+  subsection Function
+    set Function constants = k0=1e-9, phi0=0.01, rphi1=0.2, etasb=1e19, etaf=1, y0=10e3, maxy=1e6   # delta=sqrt(k0*phi0^3(etab+4/3 etas)/etaf)
+    set Function expression = phi0* (y<y0 ? 1.0 : rphi1 + (1-rphi1)*2.0/( exp( (y-y0)/2.5/sqrt(k0*phi0^3*(7/3.0 *etasb/etaf)) ) + \
+                                                                          exp(-(y-y0)/2.5/sqrt(k0*phi0^3*(7/3.0 *etasb/etaf)) )    ) )    ; 0
+    set Variable names      = x,y
+  end
+end
+
+subsection Boundary composition model
+  set Fixed composition boundary indicators = bottom, top
+  set List of model names = initial composition
+end
+
+subsection Boundary fluid pressure model
+#  set Plugin name = density
+#  subsection Density
+#    set Density formulation = fluid density
+#  end
+end
+
+subsection Material model
+
+  set Model name = melt global
+  subsection Melt global
+
+    set Include melting and freezing = false
+    set Melting time scale for operator splitting = 1e3
+
+    set Thermal conductivity              = 3
+    set Reference specific heat           = 1000
+    set Reference solid density           = 3300
+    set Depletion density change          = 0.0
+    set Thermal expansion coefficient     = 0.0
+    #set Reference temperature             = 1000
+
+    set Reference melt density            = 2800
+    set Reference permeability            = 1e-9
+    set Reference melt viscosity          = 1
+
+    set Reference shear viscosity         = 1e19
+    set Thermal viscosity exponent        = 0
+    set Reference bulk viscosity          = 1e19
+    set Thermal bulk viscosity exponent   = 0
+    set Exponential melt weakening factor = 0
+
+    set Surface solidus                   = 1000.1
+    set Pressure solidus change           = 0.0
+    set Depletion solidus change          = 500.0
+
+  end
+end
+
+subsection Mesh refinement
+  set Initial global refinement                = 0
+  set Initial adaptive refinement              = 0
+  set Minimum refinement level                 = 0
+  set Time steps between mesh refinement       = 0
+  set Strategy = composition
+end
+
+subsection Postprocess
+  set List of postprocessors = visualization, composition statistics, velocity statistics, temperature statistics, depth average
+  subsection Visualization
+    set List of output variables      = material properties, strain rate, melt material properties
+    subsection Material properties
+      set List of material properties = density, viscosity
+    end
+    subsection Melt material properties
+      set List of properties = fluid density, permeability, fluid viscosity, compaction viscosity
+    end
+    set Number of grouped files       = 0
+    set Output format                 = vtu
+    set Time between graphical output = 1e3
+    set Time steps between graphical output = 100
+  end
+  subsection Depth average
+    set List of output variables = composition
+    set Number of zones = 1000
+    set Output format = txt
+    set Time between graphical output = 1e4
+  end
+end
+
+subsection Checkpointing
+  set Time between checkpoint = 600
+end
+
