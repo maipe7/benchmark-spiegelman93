@@ -7,7 +7,7 @@ etaf=1
 drho=500.0
 g=10.0
 
-rphi1=0.5
+rphi1=0.2
 
 delta2=$(python -c "print($k0*$phi0**3*7.0/3.0*$etasb/$etaf)")
 delta=$(python -c "print(pow($delta2,0.5))")
@@ -18,7 +18,7 @@ ndelta=200
 
 yres=1000
 
-for yres in 200 500 1500;
+for yres in 1000;
 do
 
 outputfolder=output-sp93-ias-ny${yres}-rphi${rphi1}
@@ -51,13 +51,15 @@ echo "subsection Initial composition model" >> 2add.prm
 echo " set Model name = function" >> 2add.prm
 echo " subsection Function" >> 2add.prm
 echo "   set Function constants = phi0=${phi0}, rphi1=${rphi1}, delta=${delta}, y0=$(python -c "print($delta*50)")" >> 2add.prm
-echo "   set Function expression = phi0*(y<y0 ? 1.0 : rphi1 + (1-rphi1)*2.0/( exp( (y-y0)/2.5/delta ) + exp(-(y-y0)/2.5/delta) )  ) ; 0" >> 2add.prm
+echo "   set Function expression = phi0*(y<y0 ? 1.0 : rphi1 + (1-rphi1)*2.0/( exp( (y-y0)/2.5/delta ) + exp(-(y-y0)/2.5/delta) )  ) ; 0; 0" >> 2add.prm
 echo " end" >> 2add.prm
 echo "end" >> 2add.prm
 
 echo "subsection Material model" >> 2add.prm
-echo "  set Model name = melt global" >> 2add.prm
-echo "  subsection Melt global" >> 2add.prm
+echo "  set Model name = melt petrol" >> 2add.prm
+echo "  subsection Melt petrol" >> 2add.prm
+#echo "  set Model name = melt global" >> 2add.prm
+#echo "  subsection Melt global" >> 2add.prm
 echo "     set Reference permeability            = ${k0}" >> 2add.prm
 echo "     set Reference melt viscosity          = ${etaf}" >> 2add.prm
 echo "     set Reference shear viscosity         = ${etasb}" >> 2add.prm
@@ -84,18 +86,20 @@ aspect-release spiegelman93_added.prm
 awk -f addblanks.awk < $outputfolder/depth_average.txt > $outputfolder/d.txt
 
 gnuplot -persist <<-EOFMarker
-    set title "Sp 93 benchmark"
+    set title "Spigeleman 93 benchmark"
     set xrange [0:${ndelta}]
     set yrange [0:85]
     set nokey
     set out "${outputfolder}/d.png"
     set terminal png
-    plot "${outputfolder}/d.txt" using ($ndelta-(\$2)/$delta):((\$3)/$phi0*3+(\$1)/$t0yr-3) every :4 with lines
+    plot "${outputfolder}/d.txt" using ($ndelta-(\$2)/$delta):((\$3)/$phi0*3+(\$1)/$t0yr-3) every :1 with lines
 EOFMarker
 
 gnuplot -persist <<-EOFMarker
-    set title "Sp 93 benchmark"
+    set title "Spiegelman 93 benchmark"
+    set xlabel "x (compaction lengths)"
     set xrange [0:${ndelta}]
+    set ylabel "porosity (nondim)"
     set yrange [-2:2]
     set nokey
     set out "${outputfolder}/d80.png"
