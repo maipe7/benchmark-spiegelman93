@@ -19,8 +19,7 @@
 */
 
 #include <aspect/global.h>
-#include <aspect/time_stepping/composition_time_step.h>
-#include <aspect/adiabatic_conditions/interface.h>
+#include "composition_time_step.h"
 
 namespace aspect
 {
@@ -30,7 +29,7 @@ namespace aspect
     double
     CompositionTimeStep<dim>::execute()
     {
-      double min_local_conduction_timestep = std::numeric_limits<double>::max();
+      double min_local_composition_timestep = std::numeric_limits<double>::max();
 
       const QIterated<dim> quadrature_formula (QTrapezoid<1>(),
                                                this->get_parameters().stokes_velocity_degree);
@@ -44,12 +43,15 @@ namespace aspect
 
       const unsigned int n_q_points = quadrature_formula.size();
 
+      double current_time_step;
+      if (this->get_timestep_number() > 0) current_time_step = this->get_timestep();
+      else current_time_step = 1e30; // or return ?
+
       MaterialModel::MaterialModelInputs<dim> in(n_q_points,
                                                  this->introspection().n_compositional_fields);
-      MaterialModel::MaterialModelOutputs<dim> out(n_q_points,
-                                                   this->introspection().n_compositional_fields);
-      in.requested_properties = MaterialModel::MaterialProperties::equation_of_state_properties |
-                                MaterialModel::MaterialProperties::thermal_conductivity;
+
+      std::vector<double> reactions(n_q_points, numbers::signaling_nan<double>()); // Why?
+      const unsigned int porosity_index = this->introspection().compositional_index_for_name("porosity");
 
       for (const auto &cell : this->get_dof_handler().active_cell_iterators())
         if (cell->is_locally_owned())
@@ -59,58 +61,68 @@ namespace aspect
                       cell,
                       this->introspection(),
                       this->get_solution());
+            
+            // TODO iterate over all compositions or choose some specific?
 
-            this->get_material_model().evaluate(in, out);
+            // reactions vector contains accummulated reactions over time step (integral, not rate; see helper_functions.cc)
+            fe_values[this->introspection().extractors.compositional_fields[porosity_index]].get_function_values(this->get_reaction_vector(),
+            reactions);
 
-            if (this->get_parameters().formulation_temperature_equation
-                == Parameters<dim>::Formulation::TemperatureEquation::reference_density_profile)
-              {
-                // Overwrite the density by the reference density coming from the
-                // adiabatic conditions as required by the formulation
-                for (unsigned int q=0; q<n_q_points; ++q)
-                  out.densities[q] = this->get_adiabatic_conditions().density(in.position[q]);
-              }
-            else if (this->get_parameters().formulation_temperature_equation
-                     == Parameters<dim>::Formulation::TemperatureEquation::real_density)
-              {
-                // use real density
-              }
-            else
-              AssertThrow(false, ExcNotImplemented());
-
-            // Evaluate thermal diffusivity at each quadrature point and
-            // calculate the corresponding conduction timestep, if applicable
             for (unsigned int q=0; q<n_q_points; ++q)
-              {
-                const double k = out.thermal_conductivities[q];
-                const double rho = out.densities[q];
-                const double c_p = out.specific_heat[q];
-
-                Assert(rho * c_p > 0,
-                       ExcMessage ("The product of density and c_P needs to be a "
-                                   "non-negative quantity."));
-
-                const double thermal_diffusivity = k/(rho*c_p);
-
-                if (thermal_diffusivity > 0)
-                  {
-                    min_local_conduction_timestep = std::min(min_local_conduction_timestep,
-                                                             this->get_parameters().CFL_number*pow(cell->minimum_vertex_distance(),2.)
-                                                             / thermal_diffusivity);
-                  }
+              {                
+                double reaction_rate = std::max(std::abs(reactions[q]),1e-30)/current_time_step;
+                //std::cout << reaction_rate << " ";
+                
+                min_local_composition_timestep = std::min(min_local_composition_timestep,
+                                                             max_change/reaction_rate);
+                //min_local_composition_timestep = 1e2*year_in_seconds; // TEST
               }
           }
 
-      const double min_conduction_timestep = Utilities::MPI::min (min_local_conduction_timestep, this->get_mpi_communicator());
+      const double min_composition_timestep = Utilities::MPI::min (min_local_composition_timestep, this->get_mpi_communicator());
 
-      AssertThrow (min_conduction_timestep > 0,
+      AssertThrow (min_composition_timestep > 0,
                    ExcMessage("The time step length for the each time step needs to be positive, "
-                              "but the computed step length was: " + std::to_string(min_conduction_timestep) + ". "
-                              "Please check for non-positive material properties."));
+                              "but the computed step length was: " + std::to_string(min_composition_timestep) + ". "
+                              "Please check."));
 
-      return min_conduction_timestep;
+      std::cout << "Composition time step calculated:" << min_composition_timestep/year_in_seconds << " yrs. \n";
+      return min_composition_timestep;
     }
 
+    template <int dim>
+    void
+    CompositionTimeStep<dim>::declare_parameters (ParameterHandler &prm)
+    {
+      prm.enter_subsection("Time stepping");
+      {
+        prm.enter_subsection("Composition time step");
+
+        prm.declare_entry("Max porosity change", "0.1",
+                          Patterns::Double (0.),
+                          "A factor that ...");
+
+        prm.leave_subsection();
+      }
+      prm.leave_subsection();
+    }
+
+
+
+    template <int dim>
+    void
+    CompositionTimeStep<dim>::parse_parameters (ParameterHandler &prm)
+    {
+      prm.enter_subsection("Time stepping");
+      {
+        prm.enter_subsection("Composition time step");
+
+        max_change = prm.get_double("Max porosity change");
+        
+        prm.leave_subsection();
+      }
+      prm.leave_subsection();
+    }
 
   }
 }
@@ -122,9 +134,7 @@ namespace aspect
   {
     ASPECT_REGISTER_TIME_STEPPING_MODEL(CompositionTimeStep,
                                         "composition time step",
-                                        "TO CHANGE This model computes the conduction time step as the minimum "
-                                        "over all cells of $ CFL h^2 \\cdot \\rho C_p / k$, "
-                                        "where k is the thermal conductivity. This plugin will always "
-                                        "request advancing to the next time step.")
+                                        "TO CHANGE This model computes the composition time step "
+                                        "from reaction rates. Requires operator splitting")
   }
 }
